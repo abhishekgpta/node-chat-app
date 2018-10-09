@@ -13,9 +13,17 @@ var io = socketIO(server);
 io.on('connection',(socket)=>{
 	console.log("New user connected");
 
+	socket.emit("newMessage",{
+		from:"abhi@emaple.com",
+		text:"whatsup newMessage",
+		createAt:123
+	});
+	socket.on('createMessage',(message)=>{
+		console.log("create message",message);
+	});
 	socket.on("disconnect",()=>{
 			console.log("user was disconnected");
-		})
+	});
 });
 
 app.use(express.static(publicPath));
