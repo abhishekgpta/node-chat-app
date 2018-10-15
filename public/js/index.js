@@ -13,22 +13,25 @@ var socket = io();
 	});
 
 	socket.on("newMessage",function(message){
-		console.log("new message",message);
+		// console.log("new message",message);
 		var formattedTime = moment(message.createdAt).format('h:mm a')
-		var li = jQuery('<li></ki>')
-		li.text(`${message.from} ${formattedTime}:${message.text}`);
-
-		jQuery("#messages").append(li);
+		var template = jQuery("#message-template").html();
+		var html = Mustache.render(template,{
+			text:message.text,
+			from:message.from,
+			createdAt:formattedTime
+		});
+		jQuery("#messages").append(html)
 	});
 	socket.on("newLocationMessage",function(message){
-		console.log(message);
-		var formattedTime = moment(message.createdAt).format('h:mm a')
-		var li = jQuery('<li></ki>');
-		var a = jQuery("<a target='_blank'>My current Location</a>");
-		li.text(`${message.from} ${formattedTime}:`);
-		a.attr('href',message.url);
-		li.append(a);
-		jQuery("#messages").append(li);
+		var formattedTime = moment(message.createdAt).format('h:mm a');
+		var template = jQuery("#location-message-template").html();
+		var html = Mustache.render(template,{
+			from:message.from,
+			createdAt:formattedTime,
+			url:message.url,
+		});
+		jQuery("#messages").append(html);
 	});
 	// socket.emit('createMessage',{
 	// 	from:'abhishek',
