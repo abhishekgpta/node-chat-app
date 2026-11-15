@@ -175,4 +175,23 @@ describe('production configuration', () => {
     assert.throws(() => createChatServer({ production: true, redisUrl: '' }), /REDIS_URL/);
     assert.throws(() => createChatServer({ production: true, redisUrl: 'redis://localhost:6379', channelPrefix: '' }), /REDIS_CHANNEL_PREFIX/);
   });
+
+  it('waits for Redis initialization before returning startup health', async () => {
+    const chat = createChatServer({
+      production: true,
+      redisUrl: 'redis://127.0.0.1:1',
+      channelPrefix: 'startup-health-test'
+    });
+    let initializationSettled = false;
+    const settled = chat.ready.catch(() => {}).then(() => { initializationSettled = true; });
+    try {
+      await new Promise((resolve) => chat.server.listen(0, '127.0.0.1', resolve));
+      const response = await fetch(`http://127.0.0.1:${chat.server.address().port}/healthz`);
+      assert.equal(response.status, 503);
+      assert.equal(initializationSettled, true);
+    } finally {
+      await settled;
+      await chat.close();
+    }
+  });
 });

@@ -54,9 +54,14 @@ function createChatServer({
   })();
   ready.catch(() => console.error('Chat initialization failed; check Redis configuration.'));
 
-  app.get('/healthz', (request, response) => {
+  app.get('/healthz', async (request, response) => {
     response.set('Cache-Control', 'no-store');
-    response.status(available() ? 200 : 503).json({ ready: available() });
+    try {
+      await ready;
+      response.status(available() ? 200 : 503).json({ ready: available() });
+    } catch (error) {
+      response.status(503).json({ ready: false });
+    }
   });
   app.use(express.static(path.join(__dirname, '../public')));
 
