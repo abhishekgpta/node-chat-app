@@ -1,4 +1,11 @@
-var socket = io();
+var socket = io({transports: ['websocket']});
+
+socket.on('connect_error', function(){
+	jQuery('#connection-status').text('Unable to connect. Retrying...');
+	if(!socket.active){
+		setTimeout(function(){ socket.connect(); }, 3000);
+	}
+});
 
 function scrollToBottom(){
 	var messages = jQuery("#messages");
@@ -15,6 +22,7 @@ function scrollToBottom(){
 	}
 }	
 socket.on("connect",function(){
+	jQuery('#connection-status').text('Connected');
 	console.log("connected to server")
 	var params = jQuery.deparam(window.location.search);
 
@@ -33,6 +41,7 @@ socket.on("connect",function(){
 	// });
 });
 socket.on("disconnect",function(){
+	jQuery('#connection-status').text('Disconnected. Reconnecting...');
 	console.log("disconnected from server")
 });
 socket.on("updateUserList",function(users){
@@ -78,7 +87,8 @@ jQuery("#message-form").on("submit",function(e){
 	var messageTextBox = jQuery('[name=message]');
 	socket.emit("createMessage",{
 		text:messageTextBox.val()
-	},function(){
+	},function(err){
+		if(err){ return alert(err); }
 		messageTextBox.val("");
 	});
 });
