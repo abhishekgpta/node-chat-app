@@ -58,9 +58,13 @@ Official hosting reference: https://vercel.com/docs/functions/websockets
 ### Operational behavior
 
 - WebSocket-only transport avoids polling requests landing on other instances.
-- The Redis adapter broadcasts across instances. Online names are derived from
-  live sockets with `fetchSockets()`, not a process-local array or durable user
-  records. Names need not be unique, and knowing a room name allows joining it.
+- The Redis adapter broadcasts across instances. Online names use expiring Redis
+  presence records rather than queries that require every instance to respond:
+  idle Vercel instances may be paused. Presence leases are renewed every 45
+  seconds and expire after two minutes. Normal disconnects remove the record
+  immediately; abrupt instance loss can take about 165 seconds to disappear from
+  periodically refreshed lists. Names need not be unique, and knowing a room
+  name allows joining it.
 - Function duration is set to 300 seconds. Connections can close on duration
   limits or deployments; the browser reconnects and rejoins automatically.
   There is no connection recovery/history, so messages during a reconnect can

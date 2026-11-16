@@ -21,3 +21,10 @@ Follow-up authorization: the user subsequently requested publishing and deployin
 the prepared app, and completed GitHub and Vercel sign-in on 2026-11-16.
 
 Reference: https://vercel.com/docs/functions/websockets (checked 2026-11-15).
+
+Deployment-driven adjustment: managed Redis diagnostics reproduced timeouts
+waiting for idle Vercel adapter subscribers to answer `fetchSockets()`. Replace
+distributed presence queries with Redis sorted-set leases renewed every 45
+seconds and expiring after 120 seconds. Keep the adapter for room broadcasts.
+Normal disconnects remove their lease; abandoned leases expire without waiting
+for a paused instance. Presence after abrupt termination is eventually consistent.

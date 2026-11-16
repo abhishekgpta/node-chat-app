@@ -6,6 +6,7 @@ const { createClient } = require('redis');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { generateMessage, generateLocationMessage } = require('./utils/message');
 const { isRealString } = require('./utils/validation');
+const { RedisPresence } = require('./utils/redis-presence');
 
 function createChatServer({
   redisUrl = process.env.REDIS_URL,
@@ -19,7 +20,9 @@ function createChatServer({
   const server = http.createServer(app);
   const io = new Server(server, { transports: ['websocket'], maxHttpBufferSize: 16384 });
   const clients = [];
+  const operations = new Set();
   let initialized = !redisUrl;
+  let presenceStore;
 
   function available() {
     return initialized && clients.every((client) => client.isReady);
@@ -46,6 +49,7 @@ function createChatServer({
         requestsTimeout: 3000,
         publishOnSpecificResponseChannel: true
       }));
+      presenceStore = new RedisPresence(publisher, { prefix: channelPrefix || 'node-chat-local' });
       initialized = true;
     } catch (error) {
       clients.forEach((client) => { if (client.isOpen) client.destroy(); });
@@ -76,8 +80,9 @@ function createChatServer({
   });
 
   async function presence(room) {
-    const sockets = await io.in(room).fetchSockets();
-    io.to(room).emit('updateUserList', sockets.map((socket) => socket.data.name));
+    const names = presenceStore ? await presenceStore.list(room) :
+      (await io.in(room).fetchSockets()).map((socket) => socket.data.name);
+    io.to(room).emit('updateUserList', names);
   }
 
   io.on('connection', (socket) => {
@@ -90,7 +95,19 @@ function createChatServer({
       }).catch(() => {
         acknowledge('Chat is temporarily unavailable. Please try again.');
       });
+      const operation = pending;
+      operations.add(operation);
+      operation.finally(() => operations.delete(operation));
     }
+
+    const heartbeat = presenceStore ? setInterval(() => {
+      if (!socket.connected || !socket.data.room) return;
+      run(async () => {
+        await presenceStore.add(socket.id, socket.data.name, socket.data.room);
+        await presence(socket.data.room);
+      });
+    }, 45000) : null;
+    if (heartbeat) heartbeat.unref();
 
     socket.on('join', (params, callback) => run(async (acknowledge) => {
       if (!params || !isRealString(params.name) || !isRealString(params.room) ||
@@ -100,9 +117,13 @@ function createChatServer({
       if (!socket.connected) return;
       const previous = { ...socket.data };
       const room = `chat:${params.room.trim()}`;
-      if (previous.room) await socket.leave(previous.room);
+      if (previous.room) {
+        if (presenceStore) await presenceStore.remove(socket.id, previous.name, previous.room);
+        await socket.leave(previous.room);
+      }
       socket.data = { name: params.name.trim(), room };
       await socket.join(room);
+      if (presenceStore) await presenceStore.add(socket.id, socket.data.name, room);
       if (previous.room && previous.room !== room) {
         await presence(previous.room);
         io.to(previous.room).emit('newMessage', generateMessage('Admin', `${previous.name} has left.`));
@@ -132,17 +153,25 @@ function createChatServer({
       acknowledge();
     }, callback));
 
-    socket.on('disconnect', () => run(async () => {
-      const { room, name } = socket.data;
-      if (!room) return;
-      await presence(room);
-      io.to(room).emit('newMessage', generateMessage('Admin', `${name} has left.`));
-    }));
+    socket.on('disconnect', () => {
+      clearInterval(heartbeat);
+      run(async () => {
+        const { room, name } = socket.data;
+        if (!room) return;
+        if (presenceStore) await presenceStore.remove(socket.id, name, room);
+        await presence(room);
+        io.to(room).emit('newMessage', generateMessage('Admin', `${name} has left.`));
+      });
+    });
   });
 
   async function close() {
     await new Promise((resolve) => io.close(resolve));
-    clients.forEach((client) => { if (client.isOpen) client.destroy(); });
+    await Promise.all([...operations]);
+    await Promise.allSettled(clients.map(async (client) => {
+      if (client.isReady) await client.quit();
+      else if (client.isOpen) client.destroy();
+    }));
   }
 
   return { server, io, ready, close };

@@ -141,6 +141,18 @@ describe('chat server', () => {
     assert.deepEqual(await left, ['Ada']);
   });
 
+  it('can join even when an idle adapter subscriber does not respond', async () => {
+    const idle = require('redis').createClient({ url: process.env.TEST_REDIS_URL });
+    await idle.connect();
+    await idle.subscribe(`${prefix}-request#/#`, () => {});
+    try {
+      const socket = await instance();
+      await emit(socket, 'join', { name: 'Ada', room: 'office' });
+    } finally {
+      await idle.quit();
+    }
+  });
+
   it('isolates environments using channel prefixes', async () => {
     const first = await instance();
     const other = await instance(`${prefix}-preview`);
